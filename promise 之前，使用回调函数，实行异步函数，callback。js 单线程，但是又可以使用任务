@@ -1,0 +1,104 @@
+promise 之前，使用回调函数，实行异步函数，callback。js 单线程，但是又可以使用任务回调实现异步代码的编程，但是callback的层层嵌套，会带来一个问题：回调地狱。
+promise 用来封装一个一步操作，并可以获取其结果和状态的对象，是一部变成的一种解决方案。
+
+promise 是一个构造函数，所以是通过new操作创建一个实例，promise 实例
+
+构造函数接受一个函数作为参数，这个函数，称为执行器函数。
+
+执行器函数接受两个参数，resolve，reject，resolve异步操作执行成功后的回调函数，reject异步操作执行失败的回调函数。
+
+promise 实例的状态是私有的，只能通过执行器函数来完成状态的转换，控制状态的改变是通过执行器函数内的两个状态函数来实现。！！只要promise实例的状态发生了改变，该状态就已经落定了，不可逆，将来都不在发生改变。
+
+new Promise((resolve, reject) => {}) // pending 最初状态
+
+new Promise((resolve, reject) => resolve()) // fulfilled 已成功状态
+
+new Promise((resolve, reject) => reject()) // rejected 已失败状态
+
+new Promise((resolve, reject) => { throw new Error('error') }) // rejected 已失败状态
+
+promise 上的then方法，是promise实例指定处理程序的主要方法。then方法接受两个可选参数（onresolved。onrejected）返回一个新的promise实例。
+
+const promise = new Promise((resolve, reject) => {
+  setTimeout(() => {
+    const rand = Math.random() * 100
+    if (rand >= 50) {
+        // 执行resolve 并传入相应数据
+      resolve({name: 'James', age: 36})
+    } else {
+       // 执行reject 并传入异常
+      reject(new Error('Error'))
+    }
+  }, 1000)
+})
+
+promise.then(
+  (value) => {
+    // 当promise实例的状态为 fulfilled 时执行
+    console.log('执行成功时的结果值数据', value)
+  },
+  (error) => {
+    // 当promise实例的状态为 rejected 时执行
+    console.log('执行失败时的结果值数据', error)
+  }
+)
+
+提供非函数类型的参数，会被静默忽略，就是说，如果某个回调函数用不到，可以给到null，或者undfiened。这样可以直接跳过处理。有助于避免在内存中创建多余的对象。！！！
+
+then中的执行是按照顺序执行的，如果只写一个会默认是fulfilled，如果忽略第一个，需要将第一个置为null。此时执行第二个回调
+
+then 方法最后会返回一个新的promise实例。既然是promise实例，就可以实现一个链式调用。将异步操作已同步操作的流程表达出来。避免了层层嵌套的回调函数。
+
+promise原型对象上的catch方法，是实例指定失败处理程序。相当于.then(null,(error)=>{})的语法糖。
+
+promise.then((value) => {
+  console.log(value)
+}).catch((error) => {
+  console.log(error)
+})
+
+使用catch的优势体现，具体如下：
+// bad
+Promise.then(
+  (value) => { // ... },
+  (error) => { // ... }
+).then(
+  (value) => { // ... },
+  (error) => { // ... }
+)
+
+// good
+Promise
+  .then((value) => { // ... })
+  .then((value) => { // ... })
+  .catch((error) => { // ... })
+
+过程中任意一个过程跑出错误，都会被最后一个catch捕获
+
+promise。resolve 方法是一个静态方法，总会返回一个fullfiiled的方法。
+
+Promise.resolve({name: 'James'}) // Promise {<fulfilled>: {name: 'James'}
+
+Promise.resolve('Hello Promise') // Promise {<fulfilled>: 'Hello Promise'}
+
+Promise.resolve() // Promise {<fulfilled>: undefined}
+
+Promise.resolve(new Error('error')) // Promise {<fulfilled>: Error: error
+
+Promise.resolve 方法传入任何非 promise 实例，都将返回一个状态为 fulfilled 的 promise 实例
+
+
+try catch 是无法捕获promise.reject 的错误！！！
+
+promise.catch 捕获以及处理异常
+
+promise.all() 接受多个promise 实例最终返回一个新的promise实例 返回的实例状态：fullfilled，
+
+如果promise接受处理的参数，回调没有传参，或者不处理，那么就会是展示pending状态。如果是resolve后的结果，则会展示fullfilled状态。
+
+
+
+
+
+
+

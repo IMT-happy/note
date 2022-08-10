@@ -1,0 +1,227 @@
+React 应用中的高频对象 学习笔记二
+
+react 启动到渲染的过程中出现频率较高，影响范围较大的对象。
+
+react 包，定义react组件中的必要函数。提供一些操作reactElement对象的api。
+
+<App/> 包含其子节点都是reactElement对象。render之后才会生成子节点。每个reactElement对象区别在于type不同！
+
+react 设计中的所有采用jsx语法书写的节点，都会呗编译器转换，最终会以React.createElement()的方式，创建一个与之对应的rectElement对象。
+
+reactElement 对象的数据结构：
+
+export type ReactElement = {
+  // 用于辨别ReactElement对象
+  $$typeof: any,
+
+  // 内部属性
+  type: any, // 表明其种类
+  key: any,
+  ref: any,
+  props: any,
+
+  // ReactFiber 记录创建本对象的Fiber节点, 还未与Fiber树关联之前, 该属性为null
+  _owner: any,
+
+  // __DEV__ dev环境下的一些额外信息, 如文件路径, 文件名, 行列信息等
+  _store: {validated: boolean, ...},
+  _self: React$Element<any>,
+  _shadowChildren: any,
+  _source: Source,
+};
+
+每个reactElement对象中的key属性，会在reconciler中用到，为什么呢，因为之前说过reconciler这个是fiber树的循环处理的任务队列，生成虚拟dom树的，key的使用，是在其进行相关工作的时候，去做算法diff比较处理使用。
+
+每个react Element对象中的type属性，决定了节点的种类：
+
+比方说dom元素中存在一些标签元素：div，span，i，h等。函数func，或class类。等react其他内部定义的节点类型。protal，context，fragment等。
+
+在reconciler 循环处理的事件池中，会根据reactElement中的type属性执行不同的逻辑！（以下只是举例子，具体的需要在读到fiber构建阶段详细再看
+
+type为字符串类型，直接使用
+
+type是ReactComponent，类型，则调用render方法获取子节点
+
+type是一个func，则会调用该方法获取子节点
+
+对于ReacrElement来说，ReactComponent仅仅是诸多type类型中的一种，就是ReactCom 是react内部自己定义的可识别组件，最后还是解析成子节点来处理。
+
+ReactComponent 状态组件，在开发中使用的频率很高。因为开发中都是组件化，很少会直接写html吧。
+
+class App extends React.Component {
+  render() {
+    return (
+      <div className="app">
+        <header>header</header>
+        <Content />
+        <footer>footer</footer>
+      </div>
+    );
+  }
+}
+
+class Content extends React.Component {
+  render() {
+    return (
+      <React.Fragment>
+        <p>1</p>
+        <p>2</p>
+        <p>3</p>
+      </React.Fragment>
+    );
+  }
+}
+
+export default App;
+
+在进行编译的过程中，不去配置class的es6转es5的配置项，仅配置jsx的编译，直观感受一下ReactComponent的编译后是什么样子的：
+
+class App_App extends react_default.a.Component {
+  render() {
+    return /*#__PURE__*/ react_default.a.createElement(
+      'div',
+      {
+        className: 'app',
+      } /*#__PURE__*/,
+      react_default.a.createElement('header', null, 'header') /*#__PURE__*/,
+
+      // 此处直接将Content传入, 是一个指针传递
+      react_default.a.createElement(App_Content, null) /*#__PURE__*/,
+      react_default.a.createElement('footer', null, 'footer'),
+    );
+  }
+}
+class App_Content extends react_default.a.Component {
+  render() {
+    return /*#__PURE__*/ react_default.a.createElement(
+      react_default.a.Fragment,
+      null /*#__PURE__*/,
+      react_default.a.createElement('p', null, '1'),
+      /*#__PURE__*/
+
+      react_default.a.createElement('p', null, '2'),
+      /*#__PURE__*/
+
+      react_default.a.createElement('p', null, '3'),
+    );
+  }
+}
+
+可以明显的看到，是调用了createElement函数，并且createElement函数的第一个参数传的就是上面说的给每个节点定义一个type类型。在转换中作为标记，告诉处理器这边指向的是什么dom标签元素，或者是否是字符串直接展示，或者是方法写入dom事件中去。
+
+自定义组件会被编译成：createElement(App_xxx, null) 的形式，这个形式是react内部设计的定义，按照这样的规则，去解析component组件到渲染。
+
+ReactComponent，是class类型，继承父类的Component，具备：setState，forceUpdate等方法，和cintext，updater属性。看看源码：
+
+function Component(props, context, updater) {
+  this.props = props;
+  this.context = context;
+  // If a component has string refs, we will assign a different object later.
+  this.refs = emptyObject;
+  // We initialize the default updater but the real one gets injected by the
+  // renderer.
+  this.updater = updater || ReactNoopUpdateQueue;
+}
+
+Component.prototype.setState = function(partialState, callback) {
+  invariant(
+    typeof partialState === 'object' ||
+      typeof partialState === 'function' ||
+      partialState == null,
+    'setState(...): takes an object of state variables to update or a ' +
+      'function which returns an object of state variables.',
+  );
+  this.updater.enqueueSetState(this, partialState, callback, 'setState');
+};
+
+Component.prototype.forceUpdate = function(callback) {
+  this.updater.enqueueForceUpdate(this, callback, 'forceUpdate');
+};
+
+看到xxxx.prototype.xxxx ，应该都不陌生。这就是往原型链上写东西，可以写方法，可以写属性，只是写进去的都是隐式属性，且可被继承。
+
+在reconciler阶段，会依据ReactElement对象的特征，生成队形的fiber节点，当识别到ReactElement对象是class类型的时候，会触发ReactComponent对象的生命周期，在调用render方法生成ReactElement子节点。 
+
+看看源码：
+// We show the whole stack but dedupe on the top component's name because
+// the problematic code almost always lies inside that component.
+const componentName = getComponentName(fiber.type) || 'ReactComponent';
+if (didWarnStateUpdateForUnmountedComponent !== null) {
+  if (didWarnStateUpdateForUnmountedComponent.has(componentName)) {
+    return;
+  }
+  didWarnStateUpdateForUnmountedComponent.add(componentName);
+} else {
+  didWarnStateUpdateForUnmountedComponent = new Set([componentName]);
+}
+
+函数组件也需要深入了解，现在react的组件，大部分都是函数编写的方式了吧，hook的相关函数，只能在函数式组件中使用。我喜欢用函数式组件的。
+
+如果在function类型的组件中没有使用hook：useState, useEffect。那么在reconciler的处理中，就不会处理到，因为读不到相关的定义。而只会获取其子节点ReactElement。
+
+所以函数组件和类组件一样，仅仅是ReactElement形式中的一种。
+
+
+// 重新根据图示进行解读render的过程。
+
+组件的子节点都是在render之后，才生成的。也就是reconlier阶段；
+父级对象和子级对象之间是通过children来进行关联的，children可以看作是react特有的插槽。
+RreactElement，逐步分解节点，去生成树的过程，其实就是fiber虚拟dom树的构建过程，因为解析出的节点，会渲染构建成一个dom树
+reconlier阶段，会根据ReactElement的type类型生成节点元素，但是一些内部的自定义的占位用的节点是不会被解析到fiber树中的，比方：Fragment，这个其实就是等于<></>这样的占位元素。
+
+这里的fiber树只是为了和上文中的ReactElement树对照, 所以只用观察红色虚线框内的节点. 根节点HostRootFiber在react 应用的启动模式章节中详细解读.
+其中<App/>,<Content/>为ClassComponent类型的fiber节点, 其余节点都是普通HostComponent类型节点.
+<Content/>的子节点在ReactElement树中是React.Fragment, 但是在fiber树中React.Fragment并没有与之对应的fiber节点(reconciler阶段对此类型节点做了单独处理, 所以ReactElement节点和fiber节点不是一对一匹配).
+
+
+// =======================
+
+fiber 是核心，react体系的渲染和更新都要一fiber作为数据模型。
+
+一个fiber对象代表一个即将渲染或者已经渲染的组件（ReactElement）一个组件可能对应两个fiber（current，WorkInProgress）
+
+export type Fiber = {|
+  tag: WorkTag,
+  key: null | string,
+  elementType: any,
+  type: any,
+  stateNode: any,
+  return: Fiber | null,
+  child: Fiber | null,
+  sibling: Fiber | null,
+  index: number,
+  ref:
+    | null
+    | (((handle: mixed) => void) & { _stringRef: ?string, ... })
+    | RefObject,
+  pendingProps: any, // 从`ReactElement`对象传入的 props. 用于和`fiber.memoizedProps`比较可以得出属性是否变动
+  memoizedProps: any, // 上一次生成子节点时用到的属性, 生成子节点之后保持在内存中
+  updateQueue: mixed, // 存储state更新的队列, 当前节点的state改动之后, 都会创建一个update对象添加到这个队列中.
+  memoizedState: any, // 用于输出的state, 最终渲染所使用的state
+  dependencies: Dependencies | null, // 该fiber节点所依赖的(contexts, events)等
+  mode: TypeOfMode, // 二进制位Bitfield,继承至父节点,影响本fiber节点及其子树中所有节点. 与react应用的运行模式有关(有ConcurrentMode, BlockingMode, NoMode等选项).
+
+  // Effect 副作用相关
+  flags: Flags, // 标志位
+  subtreeFlags: Flags, //替代16.x版本中的 firstEffect, nextEffect. 当设置了 enableNewReconciler=true才会启用
+  deletions: Array<Fiber> | null, // 存储将要被删除的子节点. 当设置了 enableNewReconciler=true才会启用
+
+  nextEffect: Fiber | null, // 单向链表, 指向下一个有副作用的fiber节点
+  firstEffect: Fiber | null, // 指向副作用链表中的第一个fiber节点
+  lastEffect: Fiber | null, // 指向副作用链表中的最后一个fiber节点
+
+  // 优先级相关
+  lanes: Lanes, // 本fiber节点的优先级
+  childLanes: Lanes, // 子节点的优先级
+  alternate: Fiber | null, // 指向内存中的另一个fiber, 每个被更新过fiber节点在内存中都是成对出现(current和workInProgress)
+
+  // 性能统计相关(开启enableProfilerTimer后才会统计)
+  // react-dev-tool会根据这些时间统计来评估性能
+  actualDuration?: number, // 本次更新过程, 本节点以及子树所消耗的总时间
+  actualStartTime?: number, // 标记本fiber节点开始构建的时间
+  selfBaseDuration?: number, // 用于最近一次生成本fiber节点所消耗的时间
+  treeBaseDuration?: number, // 生成子树所消耗的时间的总和
+|};
+
+属性fiber.memoizedState指向关系，在类组件中只想的是fiber的内存状态，记录的是上一次渲染生成的临时内存数据，目的是方便下一次state更新的时候，对比数据。但是在方法组件中，此属性指向HOOK队列，因为在函数组件中都是一个个setState，都是独立的，只会在后期处理数据的时候，合并处理。
+
